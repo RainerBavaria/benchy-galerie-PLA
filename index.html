@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Filament-Farbmuster – Rainers 3D Stube</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --bg:#101114;
+    --card:#1a1c20;
+    --card-border:#2a2d33;
+    --text:#eaeaea;
+    --muted:#9a9da3;
+    --accent:#ff7a1a;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    padding:24px 16px 60px;
+  }
+  header{
+    max-width:1100px;
+    margin:0 auto 24px;
+    text-align:center;
+  }
+  header h1{
+    font-size:1.6rem;
+    margin:0 0 6px;
+  }
+  header p{
+    color:var(--muted);
+    margin:0;
+    font-size:0.9rem;
+  }
+  .controls{
+    max-width:1100px;
+    margin:0 auto 20px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    justify-content:center;
+    align-items:center;
+  }
+  .controls select, .controls input{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    color:var(--text);
+    padding:8px 12px;
+    border-radius:8px;
+    font-size:0.9rem;
+  }
+  .grid{
+    max-width:1100px;
+    margin:0 auto;
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+    gap:18px;
+  }
+  .card{
+    background:var(--card);
+    border:1px solid var(--card-border);
+    border-radius:12px;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    transition:transform .15s ease;
+  }
+  .card:hover{ transform:translateY(-3px); }
+  .card .swatch{
+    height:6px;
+    width:100%;
+  }
+  .card img{
+    width:100%;
+    aspect-ratio:1/1;
+    object-fit:cover;
+    background:#000;
+    display:block;
+  }
+  .card .info{
+    padding:12px 14px 14px;
+  }
+  .card .name{
+    font-weight:600;
+    font-size:0.95rem;
+    margin:0 0 2px;
+  }
+  .card .meta{
+    color:var(--muted);
+    font-size:0.8rem;
+    margin:0;
+  }
+  .status{
+    text-align:center;
+    color:var(--muted);
+    padding:40px 0;
+    max-width:1100px;
+    margin:0 auto;
+  }
+  .status.error{ color:#ff6b6b; }
+  footer{
+    text-align:center;
+    color:var(--muted);
+    font-size:0.75rem;
+    margin-top:40px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Filament-Farbmuster</h1>
+  <p>Jedes Muster ist ein gedruckter 3D-Benchy aus dem jeweils lagernden Filament.</p>
+</header>
+
+<div class="controls">
+  <input id="search" type="text" placeholder="Suchen…">
+  <select id="filterMaterial">
+    <option value="">Alle Materialien</option>
+  </select>
+</div>
+
+<div id="status" class="status">Lade Filamente…</div>
+<div id="grid" class="grid"></div>
+
+<footer>Rainers 3D Stube</footer>
+
+<script>
+  // ---- KONFIGURATION ----
+  // Hier den Link zur veröffentlichten Google-Sheets-CSV eintragen
+  // (Google Sheet -> Datei -> Freigeben -> Im Web veröffentlichen -> Format: CSV)
+  const CSV_URL = "PASTE_YOUR_GOOGLE_SHEET_CSV_LINK_HERE";
+
+  // Erwartete Spalten in der Tabelle (Groß-/Kleinschreibung egal):
+  // Name | Material | FarbHex | Bild | AufLager
+  // AufLager: "ja" / "nein" (alles außer "ja" wird als nicht lagernd behandelt)
+
+  let alleFilamente = [];
+
+  function normalizeBool(v){
+    if(!v) return false;
+    const s = String(v).trim().toLowerCase();
+    return s === "ja" || s === "yes" || s === "true" || s === "1" || s === "x";
+  }
+
+  function getCol(row, ...names){
+    for(const key of Object.keys(row)){
+      const k = key.trim().toLowerCase();
+      if(names.includes(k)) return row[key];
+    }
+    return "";
+  }
+
+  function render(){
+    const grid = document.getElementById("grid");
+    const status = document.getElementById("status");
+    const search = document.getElementById("search").value.trim().toLowerCase();
+    const material = document.getElementById("filterMaterial").value;
+
+    const sichtbar = alleFilamente
+      .filter(f => f.aufLager)
+      .filter(f => !search || f.name.toLowerCase().includes(search))
+      .filter(f => !material || f.material === material)
+      .sort((a,b) => a.name.localeCompare(b.name, "de"));
+
+    grid.innerHTML = "";
+
+    if(sichtbar.length === 0){
+      status.textContent = "Aktuell ist kein passendes Filament auf Lager.";
+      status.classList.remove("error");
+      status.style.display = "block";
+      return;
+    }
+    status.style.display = "none";
+
+    for(const f of sichtbar){
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        <div class="swatch" style="background:${f.hex || '#444'}"></div>
+        <img src="${f.bild}" alt="${f.name}" loading="lazy"
+             onerror="this.style.opacity=0.15">
+        <div class="info">
+          <p class="name">${f.name}</p>
+          <p class="meta">${f.material || ''}</p>
+        </div>
+      `;
+      grid.appendChild(card);
+    }
+  }
+
+  function fillMaterialFilter(){
+    const sel = document.getElementById("filterMaterial");
+    const materialien = [...new Set(alleFilamente.map(f => f.material).filter(Boolean))].sort();
+    for(const m of materialien){
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = m;
+      sel.appendChild(opt);
+    }
+  }
+
+  document.getElementById("search").addEventListener("input", render);
+  document.getElementById("filterMaterial").addEventListener("change", render);
+
+  if(!CSV_URL || CSV_URL.startsWith("PASTE_")){
+    document.getElementById("status").textContent =
+      "Bitte in index.html die Variable CSV_URL mit dem Link zu deiner veröffentlichten Google-Sheets-CSV ersetzen.";
+    document.getElementById("status").classList.add("error");
+  } else {
+    Papa.parse(CSV_URL, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results){
+        alleFilamente = results.data.map(row => ({
+          name: getCol(row,"name","filament"),
+          material: getCol(row,"material","typ"),
+          hex: getCol(row,"farbhex","hex","farbe"),
+          bild: getCol(row,"bild","bild-url","bildurl","image"),
+          aufLager: normalizeBool(getCol(row,"auflager","lager","auf lager","stock"))
+        })).filter(f => f.name);
+        fillMaterialFilter();
+        render();
+      },
+      error: function(err){
+        document.getElementById("status").textContent =
+          "Die Tabelle konnte nicht geladen werden. Bitte CSV_URL prüfen.";
+        document.getElementById("status").classList.add("error");
+      }
+    });
+  }
+</script>
+
+</body>
+</html>
